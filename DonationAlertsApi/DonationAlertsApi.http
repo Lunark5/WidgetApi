@@ -1,0 +1,34 @@
+@DonationAlertsApi_HostAddress = http://localhost:5052
+
+GET {{DonationAlertsApi_HostAddress}}/api/ping
+Accept: application/json
+
+###
+
+GET {{DonationAlertsApi_HostAddress}}/api/login/uri
+Accept: application/json
+
+###
+
+POST {{DonationAlertsApi_HostAddress}}/api/register
+Accept: application/json
+
+###
+
+GET {{DonationAlertsApi_HostAddress}}/api/login
+Accept: application/json
+
+###
+
+GET {{DonationAlertsApi_HostAddress}}/api/oauth
+Accept: application/json
+
+###
+
+GET {{DonationAlertsApi_HostAddress}}/api/widget
+Accept: application/json
+
+###
+
+GET {{DonationAlertsApi_HostAddress}}/api/login/check
+Accept: application/json
