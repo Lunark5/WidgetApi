@@ -73,10 +73,18 @@ async function getWidget(dataObj) {
 }
 
 async function tryGetTokens(dataObj) {
-    let oauthStatus = await fetch(`${dataObj.api}/api/oauth?appId=${dataObj.appId}`, {
+    let connectStatus = await fetch(`${dataObj.api}/api/ping`, {
         method: "GET"
     });
 
+    if (!connectStatus.ok) {
+        console.error("Не удалось подключиться к серверу");
+        return;
+    }
+
+    let oauthStatus = await fetch(`${dataObj.api}/api/oauth?appId=${dataObj.appId}`, {
+        method: "GET"
+    });
 
     if (!oauthStatus.ok) {
         const text = await oauthStatus.text();
