@@ -124,7 +124,8 @@ app.MapGet("/api/oauth", async (int appId) =>
             return Results.Ok(new TokenObject()
             {
                 AccessToken = user.AccessToken,
-                SocketConnectionToken = tokenBody.Data.SocketConnectionToken
+                SocketConnectionToken = tokenBody.Data.SocketConnectionToken,
+                UserId = tokenBody.Data.Id
             });
         }
         catch (Exception ex)

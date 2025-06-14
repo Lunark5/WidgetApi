@@ -9,4 +9,7 @@ public class TokenObject
     
     [JsonPropertyName("socket_connection_token")]
     public string SocketConnectionToken { get; set; }
+    
+    [JsonPropertyName("user_id")]
+    public int UserId { get; set; }
 }
