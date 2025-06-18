@@ -167,6 +167,8 @@ async function getTokensFirstTime(dataObj) {
 }
 
 function creatUri(uri) {
+    console.log(uri);
+    
     let container = document.getElementById("api-button");
 
     if (!container) {
