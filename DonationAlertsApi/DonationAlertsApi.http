@@ -32,3 +32,13 @@ Accept: application/json
 
 GET {{DonationAlertsApi_HostAddress}}/api/login/check
 Accept: application/json
+
+###
+
+GET {{DonationAlertsApi_HostAddress}}/api/twitch/login/uri
+Accept: application/json
+
+###
+
+GET {{DonationAlertsApi_HostAddress}}/api/twitch/login
+Accept: application/json

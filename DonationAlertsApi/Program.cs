@@ -1,8 +1,13 @@
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using DonationAlertsApi;
 using DonationAlertsApi.Models;
+using TwitchLib.Client;
+using TwitchLib.Client.Models;
+using TwitchLib.Communication.Clients;
+using TwitchLib.Communication.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -30,11 +35,29 @@ catch
     builder.Configuration.AddJsonFile("users.json");
 }
 
+try
+{
+    builder.Configuration.AddJsonFile("twitch.json");
+}
+catch
+{
+    var json = JsonSerializer.Serialize(new TwitchJson(), new JsonSerializerOptions { WriteIndented = true });
+    
+    await File.WriteAllTextAsync("twitch.json", json);
+    
+    builder.Configuration.AddJsonFile("twitch.json");
+}
+
 var userJson = builder.Configuration.Get<UsersJson>() ?? new UsersJson();
+var twitchJson = builder.Configuration.Get<TwitchJson>() ?? new TwitchJson();
 var users = userJson?.Users ?? new List<UserInfo>();
+var twitches = twitchJson?.Twitches ?? new List<Twitch>();
+
 var app = builder.Build();
 
 var lastUser = users.FirstOrDefault();
+var lastTwitch = twitches.FirstOrDefault();
+
 var client = new HttpClient();
 
 if (app.Environment.IsDevelopment())
@@ -47,6 +70,8 @@ app.UseCors("CorsPolicy");
 
 app.MapGet("/api/ping", () => Results.Ok())
     .WithName("Ping");
+
+#region Donation Alierts
 
 app.MapGet("/api/login/uri", (int appId = 0) =>
     {
@@ -193,15 +218,132 @@ app.MapPost("/api/register", async (User user) =>
     })
     .WithName("Register");
 
+#endregion
+
+#region Twitch
+
+app.MapGet("/api/twitch/login/uri", async (string clientId, string clientSecret, string redirectUri, string scope = "chat:edit chat:read") =>
+    {
+        var twitch = twitches.FirstOrDefault(twitch => twitch.ClientId == lastTwitch.ClientId);
+
+        if (twitch != null)
+        {
+            twitches.Remove(twitch);
+            
+            await SaveTwitches(twitches);
+        }
+        
+        var uriString =
+            $"https://id.twitch.tv/oauth2/authorize?response_type=code&client_id={clientId}&redirect_uri={redirectUri}&scope={scope}&state={GenerateRandomHash()}"
+                .Replace(" ", "+");
+
+        var newTwitch = new Twitch()
+        {
+            ClientId = clientId,
+            ClientSecret = clientSecret,
+            Scope = scope,
+            RedirectUri = redirectUri
+        };
+
+        lastTwitch = newTwitch;
+        
+        twitches.Add(newTwitch);
+        
+        await SaveTwitches(twitches);
+        
+        return Results.Ok(uriString);
+    })
+    .WithName("TwitchLoginUri");
+
+app.MapGet("/api/twitch/login", async (string code) =>
+    {
+        if (lastTwitch == null)
+        {
+            return Results.BadRequest("Please go on twitch/login/uri first");
+        }
+
+        var twitch = twitches.FirstOrDefault(twitch => twitch.ClientId == lastTwitch.ClientId);
+        
+        if (twitch == null)
+        {
+            return Results.BadRequest($"Twitch with client id: {twitch.ClientId} not found");
+        }
+
+        twitch.AuthCode = code;
+        
+        await SaveTwitches(twitches);
+        
+        return Results.Content("<script>window.close();</script>", "text/html");
+    })
+    .WithName("TwitchLogin");
+
+app.MapPost("/api/twitch/oauth", async (string clientId) =>
+    {
+        var twitch = twitches.FirstOrDefault(twitch => twitch.ClientId == lastTwitch.ClientId);
+        
+        if (twitch == null)
+        {
+            return Results.BadRequest($"Twitch with client id: {twitch.ClientId} not found");
+        }
+        
+        var uri = $"https://id.twitch.tv/oauth2/token?client_id={twitch.ClientId}&client_secret={twitch.ClientSecret}&code={twitch.AuthCode}&grant_type=authorization_code&redirect_uri={twitch.RedirectUri}";
+        var response = await client.PostAsync(uri, null);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return Results.BadRequest(response.ReasonPhrase);
+        }
+        
+        var responseBody = await response.Content.ReadAsStringAsync();
+        var token = JsonSerializer.Deserialize<TwitchOauth>(responseBody);
+        
+        twitch.AccessToken = token.AccessToken;
+        twitch.RefreshToken = token.RefreshToken;
+        twitch.ExpiresIn = token.ExpiresIn;
+        
+        await SaveTwitches(twitches);
+        
+        return Results.Ok();
+    })
+    .WithName("TwitchOauth");
+
+app.MapGet("api/twitch/socket", async (string clientId, string twitchUsername) =>
+    {
+        var twitch = twitches.FirstOrDefault(twitch => twitch.ClientId == clientId);
+        
+        if (twitch == null)
+        {
+            return Results.BadRequest($"Twitch with client id: {twitch.ClientId} not found");
+        }
+        
+        var socket = new TwitchSocket(twitchUsername, twitch.AccessToken);
+        
+        return Results.Ok();
+
+    })
+    .WithName("TwitchSocket");
+
+#endregion
+
 app.Run();
 
 #region  Private methods
+
 async Task SaveUsers(List<UserInfo> users)
 {
     userJson.Users = users;
 
     var json = JsonSerializer.Serialize(userJson, new JsonSerializerOptions { WriteIndented = true });
     await File.WriteAllTextAsync("users.json", json);
+
+}
+
+async Task SaveTwitches(List<Twitch> twitches)
+{
+    twitchJson.Twitches = twitches;
+
+    var json = JsonSerializer.Serialize(twitchJson, new JsonSerializerOptions { WriteIndented = true });
+    await File.WriteAllTextAsync("twitch.json", json);
 
 }
 
@@ -273,5 +415,19 @@ async Task<DonationGoalBody> TryGetDonationGoal(string widgetId, string token, i
     {
         return await TryGetDonationGoal(widgetId, token, currentTryNumber - 1);
     }
+}
+
+string GenerateRandomHash(int length = 32)
+{
+    const string chars = "0123456789abcdef";
+    var random = new Random();
+    var result = new StringBuilder(length);
+
+    for (int i = 0; i < length; i++)
+    {
+        result.Append(chars[random.Next(chars.Length)]);
+    }
+
+    return result.ToString();
 }
 #endregion
